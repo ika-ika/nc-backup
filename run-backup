@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script puts Nextcloud in maintenance mode, dumps the database and archives the data directory.
+# Script puts Nextcloud in maintenance mode, dumps the database and archives the data directory to a local directory.
 
 FILENAME="backup-$(date -I).tar.gz"
 DELAY="30"						# Delay in seconds before commencing backup
@@ -43,7 +43,7 @@ else
 	exit 1
 fi
 
-# Backup /var/www/nextcloud/config/config.php
+# Backup Nextcloud config file
 echo -e "\e[1m\e[34m:: \e[39mBacking up Nextcloud config file...$(tput sgr0)"
 cp $CONFIGFILE $BACKUPDIR
 
