@@ -1,0 +1,86 @@
+#!/bin/bash
+# Script puts Nextcloud in maintenance mode, dumps the database and archives the data directory.
+
+FILENAME="backup-$(date -I).tar.gz"
+DELAY="30"						# Delay in seconds before commencing backup
+BACKUPDIR="/var/backups/nextcloud"			# Put backup path here
+DBNAME="nextcloud_db"					# Put Nextcloud database name here
+CONFIGFILE="/var/www/nextcloud/config/config.php"	# Put path to Nextcloud config file here
+DATADIR="/srv/data"					# Put path to Nextcloud data directory here
+
+# Check if running as root, quit of not
+if [ "$(whoami)" != root ]; then
+	echo -e "\e[1m\e[31m:: \e[39mThis script must be run as root."
+	exit 1
+fi
+
+# Check for backup directory
+if [ ! -d $BACKUPDIR ]; then
+	echo -e "\e[1m\e[34m:: \e[39mCreating a backup directory in $BACKUPDIR"
+	mkdir $BACKUPDIR
+fi
+
+# Stop webserver
+echo -e "\e[1m\e[34m:: \e[39mStopping apache...$(tput sgr0)"
+systemctl stop apache2
+
+# Wait for users to disconnect
+echo -e "\e[1m\e[34m:: \e[39mBackup starting in $DELAY seconds...$(tput sgr0)"
+sleep $DELAY
+
+# Dump database
+echo -e "\e[1m\e[34m:: \e[39mDumping database...$(tput sgr0)"
+mysqldump --lock-tables -u"root" $DBNAME > $BACKUPDIR/nextcloud_db_dump.sql
+
+# Check if database dump was successful
+if [ "$(echo $?)" = 0 ]; then
+	echo -e "\e[1m\e[32m:: \e[39mDatabase dump successful"
+else
+	echo -e "\e[1m\e[31m:: \e[39mDatabase dump failed!"
+	echo -e "\e[1m\e[31m:: \e[39mRestarting apache..."
+	systemctl start apache2
+	echo -e "\e[1m\e[31m:: \e[39mBackup failed!"
+	exit 1
+fi
+
+# Backup /var/www/nextcloud/config/config.php
+echo -e "\e[1m\e[34m:: \e[39mBacking up Nextcloud config file...$(tput sgr0)"
+cp $CONFIGFILE $BACKUPDIR
+
+# Check if config file backup was successful
+if [ "$(echo $?)" = 0 ]; then
+	echo -e "\e[1m\e[32m:: \e[39mConfig file copied"
+else
+	echo -e "\e[1m\e[31m:: \e[39mFailed to copy config file!"
+	echo -e "\e[1m\e[31m:: \e[39mRestarting apache..."
+	systemctl start apache2
+	echo -e "\e[1m\e[31m:: \e[39mBackup failed!"
+	exit 1
+fi
+
+# Backup data directory
+echo -e "\e[1m\e[34m:: \e[39mArchiving data directory...$(tput sgr0)"
+tar czf $BACKUPDIR/$FILENAME $BACKUPDIR/nextcloud_db_dump.sql $BACKUPDIR/config.php $DATADIR &>/dev/null
+
+# Check if data directory was archived successfully
+if [ "$(echo $?)" = 0 ]; then
+	echo -e "\e[1m\e[32m:: \e[39mData directory archived successfully"
+else
+	echo -e "\e[1m\e[31m:: \e[39mFailed to archive data directory!"
+	echo -e "\e[1m\e[31m:: \e[39mRestarting apache..."
+	systemctl start apache2
+	echo -e "\e[1m\e[31m:: \e[39mBackup failed!"
+	exit 1
+fi
+
+# Cleanup
+chmod -v 700 $BACKUPDIR/$FILENAME
+rm -v $BACKUPDIR/nextcloud_db_dump.sql $BACKUPDIR/config.php
+
+# Start apache
+echo -e "\e[1m\e[34m:: \e[39mRestarting apache...$(tput sgr0)"
+systemctl start apache2
+
+# End script
+echo -e "\e[1m\e[32m:: \e[39mAll done!$(tput sgr0)"
+exit 0
